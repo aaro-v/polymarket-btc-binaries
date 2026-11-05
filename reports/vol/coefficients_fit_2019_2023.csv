@@ -1,5 +1,5 @@
 ,value
-ewma_half_life_minutes,240
-har,"{'const': -0.0283, 'rv15': 0.4592, 'rv60': 0.321, 'rv1d': 0.1474, 'rv1w': 0.0861}"
-har_seasonal,"{'const': -0.0595, 'rv15': 0.5168, 'rv60': 0.2202, 'rv1d': 0.1188, 'rv1w': 0.1569}"
-har_seasonal_iv,"{'const': 0.9354, 'rv15': 0.4789, 'rv60': 0.1918, 'rv1d': 0.1133, 'rv1w': 0.153, 'iv': 0.1709}"
+ewma_half_life_minutes,60
+har,"{'const': 0.0308, 'rv15': 0.3538, 'rv60': 0.3584, 'rv1d': 0.2083, 'rv1w': 0.1015}"
+har_seasonal,"{'const': 0.001, 'rv15': 0.426, 'rv60': 0.2153, 'rv1d': 0.1898, 'rv1w': 0.1908}"
+har_seasonal_iv,"{'const': 1.1306, 'rv15': 0.4359, 'rv60': 0.1848, 'rv1d': 0.1436, 'rv1w': 0.1681, 'iv': 0.1952}"

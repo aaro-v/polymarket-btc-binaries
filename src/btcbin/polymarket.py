@@ -261,7 +261,7 @@ def discovery_tables(M: pd.DataFrame, H: pd.DataFrame, X: pd.DataFrame, trades: 
         "windows_with_pre_window_trades": len(trades),
         "binance_outcome_agrees_with_resolution": round((w.up_binance == w.up_official).mean(), 4),
         "median_delay_of_next_print_s": H.next_delay_s.median()}])
-    D = H.dropna(subset=["mkt_asof", "mkt_next", "p_rev"])
+    D = H.dropna(subset=["mkt_asof", "mkt_next", "p_rev"])           # forecast scores: identical rows for every forecast
     rows = []
     for name, col in [("market, last print before t", "mkt_asof"), ("market, first print after t", "mkt_next"),
                       ("model, driftless", "p_base"), ("model, reversal", "p_rev")]:
@@ -270,8 +270,10 @@ def discovery_tables(M: pd.DataFrame, H: pd.DataFrame, X: pd.DataFrame, trades: 
     tables["forecast_scores"] = pd.DataFrame(rows).round(5)
     tables["log_loss_by_minute"] = D.groupby("m").apply(lambda g: pd.Series(
         {c: log_loss(g[c], g.up_official).mean() for c in ("mkt_next", "p_rev", "p_base")})).round(4)
+    D = H.dropna(subset=["mkt_next", "p_rev"])                       # information tests: the holdout's row filter
     rows = []
-    subsets = [("all minutes", D.m >= -4), ("m -4..0", D.m <= 0), ("m 1..5", D.m.between(1, 5)), ("m 6..14", D.m >= 6)]
+    subsets = [("all minutes", D.m >= -4), ("m -4..0", D.m <= 0), ("m 1..14", D.m >= 1), ("m 1..5", D.m.between(1, 5)),
+               ("m 6..14", D.m >= 6)]
     for reg in ("none", "legacy"):
         for name, sel in subsets:
             E = D[sel & (D.regime == reg)]
@@ -339,13 +341,23 @@ def discovery_tables(M: pd.DataFrame, H: pd.DataFrame, X: pd.DataFrame, trades: 
     return tables
 
 
-def run(data_dir: Path, work_dir: Path, out_dir: Path, sample: str = "discovery") -> dict[str, pd.DataFrame]:
-    out_dir.mkdir(parents=True, exist_ok=True)
+def load_sample(data_dir: Path, work_dir: Path, sample: str):
     M = load_markets(data_dir / "polymarket_markets.jsonl", sample)
     models = _models(work_dir, M)
     trades = load_trades(data_dir / "polymarket_trades.jsonl", set(M.ts))
-    H = history_panel(M, models)
-    X = trades_panel(M, trades, models)
+    return M, models, trades, history_panel(M, models), trades_panel(M, trades, models)
+
+
+def run(data_dir: Path, work_dir: Path, out_dir: Path, sample: str = "discovery") -> dict[str, pd.DataFrame]:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    if sample == "posthoc":
+        from btcbin import posthoc
+
+        tables = posthoc.tables({s: load_sample(data_dir, work_dir, s) for s in ("discovery", "holdout")})
+        for name, table in tables.items():
+            table.to_csv(out_dir / f"{name}.csv", index=False)
+        return tables
+    M, models, trades, H, X = load_sample(data_dir, work_dir, sample)
     if sample == "discovery":
         tables = discovery_tables(M, H, X, trades, models)
     else:

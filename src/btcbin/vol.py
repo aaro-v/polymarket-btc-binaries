@@ -23,12 +23,24 @@ def log(x):
     return np.log(x + EPS)
 
 
-def load(data_dir: Path) -> tuple[pd.Series, pd.Series, pd.Series]:
-    """One-minute closes on a complete grid, one-minute log returns, and DVOL indexed by the time it is known."""
+def load(data_dir: Path, mask_missing: bool = False) -> tuple[pd.Series, pd.Series, pd.Series]:
+    """One-minute closes on a complete grid, one-minute log returns, and DVOL indexed by the time it is known.
 
-    px = pd.read_parquet(data_dir / "btc_1m.parquet")["close"]
-    px = px.reindex(pd.date_range(px.index.min(), px.index.max(), freq="1min")).ffill()
-    r = np.log(px).diff().fillna(0.0)
+    The archive misses about 4,000 bars, mostly in 2019-2021. Prices are carried
+    forward over them. With ``mask_missing`` the returns of missing bars (and of
+    the bar after a gap) are NaN; otherwise they are zero, which is how the
+    minute-level forecasts frozen for the protocol were built.
+    """
+
+    raw = pd.read_parquet(data_dir / "btc_1m.parquet")["close"]
+    grid = pd.date_range(raw.index.min(), raw.index.max(), freq="1min")
+    px = raw.reindex(grid).ffill()
+    r = np.log(px).diff()
+    if mask_missing:
+        present = pd.Series(grid.isin(raw.index), index=grid)
+        r = r.where(present & present.shift(1, fill_value=False))
+    else:
+        r = r.fillna(0.0)
     dvol = pd.read_parquet(data_dir / "dvol_1h.parquet")["dvol"]
     return px, r, dvol
 
@@ -53,7 +65,11 @@ def window_table(px: pd.Series, r: pd.Series, dvol: pd.Series) -> pd.DataFrame:
     r2 = r**2
     rv15 = r2.rolling(15).sum()
     starts = pd.date_range(px.index[0].ceil("15min"), px.index[-1] - pd.Timedelta("15min"), freq="15min")
-    past = lambda n: r2.rolling(n).sum().shift(1).reindex(starts)
+    if r.isna().any():
+        # masked returns: scale the mean of the available bars (at least 90% of the window) to the window length
+        past = lambda n: (r2.rolling(n, min_periods=int(np.ceil(0.9 * n))).mean() * n).shift(1).reindex(starts)
+    else:
+        past = lambda n: r2.rolling(n).sum().shift(1).reindex(starts)
     w = pd.DataFrame(index=starts)
     w["target"] = rv15.shift(-14).reindex(starts)
     w["rv15"], w["rv60"], w["rv1d"], w["rv1w"] = past(15), past(60) / 4, past(1440) / 96, past(10080) / 672
@@ -128,12 +144,15 @@ def annual_refit_forecasts(W: pd.DataFrame, years=range(2021, 2027), min_train: 
                 continue
             fit, seas, s2 = fit_har(train, seasonal, use_iv)
             F.loc[sl, name] = predict_har(fit, seas, s2, W.loc[sl], use_iv)
-    F["ewma"], F["constant_30d"] = W["ewma240"], W["rv30d"]
+    F["constant_30d"] = W["rv30d"]
+    for hl in (15, 60, 240):
+        F[f"ewma{hl}"] = W[f"ewma{hl}"]
     return F
 
 
-def evaluate(W: pd.DataFrame, F: pd.DataFrame, start: str = OOS_START, dm_lags: int = 96) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """QLIKE, log MSE, Mincer-Zarnowitz regressions and Diebold-Mariano t-statistics against EWMA."""
+def evaluate(W: pd.DataFrame, F: pd.DataFrame, start: str = OOS_START, dm_lags: int = 96,
+             baselines: tuple[str, ...] = ("ewma",)) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """QLIKE, log MSE, Mincer-Zarnowitz regressions and Diebold-Mariano t-statistics against each baseline."""
 
     f = F.loc[start:].dropna()
     y = W["target"].reindex(f.index)
@@ -147,12 +166,13 @@ def evaluate(W: pd.DataFrame, F: pd.DataFrame, start: str = OOS_START, dm_lags: 
                      "mz_r2_log": mz.rsquared, "mz_slope_log": mz.params.iloc[1]})
     table = pd.DataFrame(rows).set_index("model")
 
-    def dm(a: str) -> float:
-        d = losses[a] - losses["ewma"]
+    def dm(a: str, b: str) -> float:
+        d = losses[a] - losses[b]
         return float(sm.OLS(d, np.ones(len(d))).fit(cov_type="HAC", cov_kwds={"maxlags": dm_lags}).tvalues.iloc[0])
 
-    table["dm_t_vs_ewma"] = [dm(c) if c != "ewma" else np.nan for c in table.index]
-    table["qlike_gain_vs_ewma_pct"] = (1 - table["qlike"] / table.loc["ewma", "qlike"]) * 100
+    for b in baselines:
+        table[f"dm_t_vs_{b}"] = [dm(c, b) if c != b else np.nan for c in table.index]
+        table[f"qlike_gain_vs_{b}_pct"] = (1 - table["qlike"] / table.loc[b, "qlike"]) * 100
     by_year = pd.DataFrame({c: v.groupby(v.index.year).mean() for c, v in losses.items()})
     table.attrs["windows"] = int(len(y))
     return table, by_year
@@ -191,18 +211,27 @@ def minute_forecasts(px: pd.Series, r: pd.Series, dvol: pd.Series, W: pd.DataFra
 def run(data_dir: Path, out_dir: Path, work_dir: Path) -> dict[str, pd.DataFrame]:
     out_dir.mkdir(parents=True, exist_ok=True)
     work_dir.mkdir(parents=True, exist_ok=True)
-    px, r, dvol = load(data_dir)
+    # Part 1 is evaluated with missing bars masked. The minute forecasts used by
+    # parts 2 and 3 are built as they were frozen for the protocol (missing bars as
+    # zero returns); the annual-refit table under that convention is kept too.
+    px, r, dvol = load(data_dir, mask_missing=True)
     W = window_table(px, r, dvol)
     F, coefs = fixed_split_forecasts(W)
-    fixed, fixed_years = evaluate(W, F)
+    for hl in (15, 60, 240):
+        F[f"ewma{hl}"] = W[f"ewma{hl}"]
+    fixed, fixed_years = evaluate(W, F, baselines=("ewma", "ewma60"))
     refit = annual_refit_forecasts(W)
-    refit_table, refit_years = evaluate(W, refit)
+    refit_table, refit_years = evaluate(W, refit, baselines=("ewma240", "ewma60"))
+    px_f, r_f, _ = load(data_dir, mask_missing=False)
+    W_f = window_table(px_f, r_f, dvol)
+    refit_f_table, refit_f_years = evaluate(W_f, annual_refit_forecasts(W_f), baselines=("ewma240", "ewma60"))
     pd.Series({k: str(v) for k, v in coefs.items()}).to_csv(out_dir / "coefficients_fit_2019_2023.csv", header=["value"])
     tables = {"oos_fixed_fit": fixed, "oos_fixed_fit_by_year": fixed_years,
-              "oos_annual_refit": refit_table, "oos_annual_refit_by_year": refit_years}
+              "oos_annual_refit": refit_table, "oos_annual_refit_by_year": refit_years,
+              "oos_annual_refit_missing_as_zero": refit_f_table, "oos_annual_refit_missing_as_zero_by_year": refit_f_years}
     for name, table in tables.items():
         table.round(5).to_csv(out_dir / f"{name}.csv")
     seasonal_factor(W.loc[:TRAIN_END]).to_frame("log_rv_deviation").to_csv(out_dir / "seasonal_factor_2019_2023.csv")
-    minute_forecasts(px, r, dvol, W).to_parquet(work_dir / "minute_forecasts.parquet")
-    px.to_frame("close").to_parquet(work_dir / "close_1m.parquet")
+    minute_forecasts(px_f, r_f, dvol, W_f).to_parquet(work_dir / "minute_forecasts.parquet")
+    px_f.to_frame("close").to_parquet(work_dir / "close_1m.parquet")
     return tables

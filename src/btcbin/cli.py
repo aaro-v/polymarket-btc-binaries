@@ -16,8 +16,9 @@ def main() -> None:
     b.add_argument("--parts", nargs="+", default=["binance", "deribit", "polymarket"], choices=["binance", "deribit", "polymarket"])
     r = sub.add_parser("run", help="Run a part of the study and write report tables.")
     r.add_argument("part", choices=["vol", "binary", "polymarket", "all"])
-    r.add_argument("--sample", choices=["discovery", "holdout"], default="discovery",
-                   help="Polymarket sample; the holdout is run once, after the protocol is committed.")
+    r.add_argument("--sample", choices=["discovery", "holdout", "posthoc"], default="discovery",
+                   help="Polymarket sample; the holdout is run once, after the protocol is committed; "
+                        "posthoc runs the checks added after the holdout.")
     r.add_argument("--data", type=Path, default=Path("data/real"))
     r.add_argument("--out", type=Path, default=Path("reports"))
     args = parser.parse_args()

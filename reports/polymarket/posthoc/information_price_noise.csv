@@ -1,0 +1,9 @@
+sample,market price,n,b_market,b_model,t_model
+discovery,first print after t (as pre-registered),82627,0.6608,0.52,4.41
+discovery,"first print after t, same rows",82505,0.6651,0.5153,4.36
+discovery,mean of the last print before t and the first after,82505,0.8626,0.4687,3.79
+discovery,mean of the two prints after t (adds a later price),82505,1.4654,0.1605,1.49
+holdout,first print after t (as pre-registered),102125,0.7522,0.2919,3.14
+holdout,"first print after t, same rows",101377,0.7586,0.2883,3.1
+holdout,mean of the last print before t and the first after,101377,0.8693,0.2589,2.61
+holdout,mean of the two prints after t (adds a later price),101377,1.4511,-0.0622,-0.68

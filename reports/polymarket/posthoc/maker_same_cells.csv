@@ -1,0 +1,5 @@
+sample,comparison,model_fills,model_pnl_c,market_fills,market_pnl_c,difference_c,t,days
+discovery,as pre-registered,16407,0.2066,15965,-0.637,0.9145,1.7137,173
+discovery,model restricted to the market arm's cells,16094,-0.003,15965,-0.637,0.6757,1.3282,173
+holdout,as pre-registered,20186,-1.0134,18794,-2.248,1.2754,3.1097,214
+holdout,model restricted to the market arm's cells,19074,-2.3013,18794,-2.248,-0.047,-0.1171,214

@@ -148,23 +148,33 @@ def run(work_dir: Path, out_dir: Path, oos_start: int = 2024) -> dict[str, pd.Da
     out_dir.mkdir(parents=True, exist_ok=True)
     px = pd.read_parquet(work_dir / "close_1m.parquet")["close"]
     F = pd.read_parquet(work_dir / "minute_forecasts.parquet")
+    r2 = np.log(px).diff().fillna(0.0) ** 2
+    F["ewma60"] = (r2.ewm(halflife=60).mean() * 15).astype("float32")   # a faster EWMA, as a second baseline
     D = window_panel(px, F)
     D["recal"] = recalibrate(D, f"e_{BEST}")
     oos = D[D.year >= oos_start]
     candidates = [("coin flip", None)] + [(f"{c} (Gaussian)", f"g_{c}") for c in F.columns] + [
         (f"{BEST} (empirical tails)", f"e_{BEST}"), (f"{BEST} (empirical, recalibrated)", "recal")]
     rows = []
+    day = oos["start"].dt.floor("D")
+    base_loss = log_loss(oos["g_ewma60"], oos["up"])
     for name, col in candidates:
         p = 0.5 if col is None else oos[col]
-        rows.append({"model": name, "log_loss": log_loss(p, oos["up"]).mean(), "brier": ((p - oos["up"]) ** 2).mean()})
+        loss = log_loss(p, oos["up"])
+        daily = (base_loss - loss).groupby(day).mean()
+        rows.append({"model": name, "log_loss": loss.mean(), "brier": ((p - oos["up"]) ** 2).mean(),
+                     "t_vs_ewma60_daily_means": daily.mean() / daily.std() * np.sqrt(len(daily)) if col != "g_ewma60" else np.nan})
     scores = pd.DataFrame(rows).set_index("model")
-    scores["log_loss_gain_vs_ewma_pct"] = (1 - scores["log_loss"] / scores.loc["ewma (Gaussian)", "log_loss"]) * 100
+    for base in ("ewma", "ewma60"):
+        scores[f"log_loss_gain_vs_{base}_pct"] = (1 - scores["log_loss"] / scores.loc[f"{base} (Gaussian)", "log_loss"]) * 100
     scores.attrs["n"] = len(oos)
     by_minute = oos.groupby("m").apply(lambda g: pd.Series({"ewma": log_loss(g["g_ewma"], g["up"]).mean(),
+                                                            "ewma60": log_loss(g["g_ewma60"], g["up"]).mean(),
                                                             "best_recalibrated": log_loss(g["recal"], g["up"]).mean()}))
     by_minute["gain_pct"] = (1 - by_minute["best_recalibrated"] / by_minute["ewma"]) * 100
+    by_minute["gain_vs_ewma60_pct"] = (1 - by_minute["best_recalibrated"] / by_minute["ewma60"]) * 100
     calibration = []
-    for col in (f"e_{BEST}", "g_ewma", "recal"):
+    for col in (f"e_{BEST}", "g_ewma", "g_ewma60", "recal"):
         bins = pd.cut(oos[col], np.linspace(0, 1, 11), include_lowest=True)
         g = oos.groupby(bins, observed=True).agg(predicted=(col, "mean"), realised=("up", "mean"), n=("up", "size"))
         calibration.append(g.assign(model=col).reset_index(names="bin"))
@@ -175,8 +185,9 @@ def run(work_dir: Path, out_dir: Path, oos_start: int = 2024) -> dict[str, pd.Da
     diff = (late.l_base - late.l_rev).groupby(late.start.dt.floor("D")).mean()
     rev_y.loc["all", ["l_base", "l_rev"]] = late[["l_base", "l_rev"]].mean().to_numpy()
     rev_y.loc["all", "gain_pct"] = (1 - rev_y.loc["all", "l_rev"] / rev_y.loc["all", "l_base"]) * 100
-    rev_y["t_day_clustered"] = np.nan
-    rev_y.loc["all", "t_day_clustered"] = diff.mean() / diff.std() * np.sqrt(len(diff))
+    by_day = (late.l_base - late.l_rev).groupby([late.year, late.start.dt.floor("D")]).mean()
+    rev_y["t_daily_means"] = [by_day.loc[y].mean() / by_day.loc[y].std() * np.sqrt(len(by_day.loc[y])) for y in rev_y.index[:-1]] + [
+        diff.mean() / diff.std() * np.sqrt(len(diff))]
     tables = {"oos_scores": scores, "oos_by_minute": by_minute, "calibration": pd.concat(calibration, ignore_index=True),
               "reversal_by_minute": rev_m, "reversal_by_year": rev_y,
               "reversal_coefficients": pd.DataFrame(coefs).T.rename_axis("test_year"),

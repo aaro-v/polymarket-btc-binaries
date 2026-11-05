@@ -42,7 +42,7 @@ def _save(fig, path: Path) -> None:
 
 def vol_by_year(reports: Path, out: Path) -> None:
     t = pd.read_csv(reports / "vol" / "oos_annual_refit_by_year.csv", index_col=0)
-    models = [("ewma", "EWMA"), ("har", "HAR"), ("har_seasonal_iv", "HAR + seasonality + DVOL")]
+    models = [("ewma60", "EWMA, 60-minute half-life"), ("har", "HAR"), ("har_seasonal_iv", "HAR + seasonality + DVOL")]
     fig, ax = _figure()
     x, w = np.arange(len(t)), 0.26
     for i, (col, label) in enumerate(models):
@@ -58,7 +58,8 @@ def calibration(reports: Path, out: Path) -> None:
     t = pd.read_csv(reports / "binary" / "calibration.csv")
     fig, ax = _figure(5.2, 4.6)
     ax.plot([0, 1], [0, 1], color=GRID, linewidth=1)
-    for i, (col, label) in enumerate([("g_ewma", "EWMA, Gaussian"), ("recal", "HAR + seasonality + DVOL, empirical tails, recalibrated")]):
+    for i, (col, label) in enumerate([("g_ewma60", "EWMA (60-minute half-life), Gaussian"),
+                                      ("recal", "HAR + seasonality + DVOL, empirical tails, recalibrated")]):
         g = t[t.model == col]
         ax.plot(g.predicted, g.realised, color=SERIES[i], linewidth=2, marker="o", markersize=4, label=label)
     _style(ax, "Calibration, 2024-2026 window-minutes", "predicted probability of an up window", "realised frequency")
