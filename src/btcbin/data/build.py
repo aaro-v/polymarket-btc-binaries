@@ -10,8 +10,8 @@ from btcbin.data import binance, deribit, polymarket
 def build(out: Path, parts: tuple[str, ...] = ("binance", "deribit", "polymarket")) -> None:
     out.mkdir(parents=True, exist_ok=True)
     if "binance" in parts:
-        bars = binance.klines_1m("BTCUSDT", "2019-01", "2026-10")
-        bars.to_parquet(out / "btc_1m.parquet")
+        bars = binance.klines_1m("BTCUSDT", "2019-01", "2026-10")[["close", "volume"]].astype({"volume": "float32"})
+        bars.to_parquet(out / "btc_1m.parquet", compression="zstd", compression_level=19)
         print(f"binance: {len(bars):,} one-minute bars, {bars.index.min()} to {bars.index.max()}")
     if "deribit" in parts:
         dvol = deribit.dvol_hourly("2021-03-24", "2026-11-01")

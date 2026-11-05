@@ -260,9 +260,10 @@ pytest
 
 `build-data` downloads the Binance archive (about 100 monthly files), DVOL from
 Deribit's public API, and the Polymarket markets, price histories and
-pre-window trades (about 150,000 requests; resumable). Vendor data stay under
-`data/real/`, which is not tracked; the reports hold aggregate tables and
-figures only. `btcbin run vol` writes the minute-level forecasts the later
+pre-window trades (about 150,000 requests; resumable), then stores them
+compactly: the one-minute closes and volumes and the trades as parquet, the
+market records as gzipped JSON lines. Vendor data stay under `data/real/`,
+which is not tracked; the reports hold aggregate tables and figures only. `btcbin run vol` writes the minute-level forecasts the later
 parts read. The tests check Polymarket's fee formula against its published
 table, the timing of price prints, quotes and fills, that passive bids fill
 only when traded through, the alignment of the variance target, that features

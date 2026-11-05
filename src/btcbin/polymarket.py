@@ -10,6 +10,7 @@ BTC/USD), not Binance.
 
 from __future__ import annotations
 
+import gzip
 import json
 from pathlib import Path
 
@@ -51,9 +52,18 @@ def log_loss(p, y, eps=1e-3):
     return -(y * np.log(p) + (1 - y) * np.log(1 - p))
 
 
+def _open_text(path: Path):
+    return gzip.open(path, "rt") if path.suffix == ".gz" else path.open()
+
+
+def markets_path(data_dir: Path) -> Path:
+    gz = data_dir / "polymarket_markets.jsonl.gz"
+    return gz if gz.exists() else data_dir / "polymarket_markets.jsonl"
+
+
 def load_markets(path: Path, sample: str) -> pd.DataFrame:
     rows = []
-    with path.open() as f:
+    with _open_text(path) as f:
         for r in map(json.loads, f):
             if r.get("missing") or not r.get("closed"):
                 continue
@@ -72,11 +82,27 @@ def load_markets(path: Path, sample: str) -> pd.DataFrame:
     return M[(M.start >= lo) & (M.start <= hi)].reset_index(drop=True)
 
 
-def load_trades(path: Path, keep: set[int]) -> dict[int, np.ndarray]:
-    """Taker trades per window as an array of (time, outcome index, +1 buy / -1 sell, price, size), time-sorted."""
+TRADE_COLUMNS = ["time", "outcome", "side", "price", "size"]
 
+
+def load_trades(data_dir: Path, keep: set[int]) -> dict[int, np.ndarray]:
+    """Taker trades per window as an array of (time, outcome index, +1 buy / -1 sell, price, size), time-sorted.
+
+    Reads the parquet files written by ``btcbin build-data`` (one per sample);
+    falls back to the raw ``polymarket_trades.jsonl`` download.
+    """
+
+    files = sorted(data_dir.glob("polymarket_trades_*.parquet"))
+    if files:
+        frame = pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)
+        frame = frame[frame["window_ts"].isin(keep)]
+        out = {}
+        for ts, g in frame.groupby("window_ts", sort=False):
+            T = g[TRADE_COLUMNS].to_numpy(dtype=float)
+            out[int(ts)] = T[np.argsort(T[:, 0], kind="stable")]
+        return out
     out = {}
-    with path.open() as f:
+    with (data_dir / "polymarket_trades.jsonl").open() as f:
         for r in map(json.loads, f):
             if r.get("error") or r["ts"] not in keep or not r.get("trades"):
                 continue
@@ -342,9 +368,9 @@ def discovery_tables(M: pd.DataFrame, H: pd.DataFrame, X: pd.DataFrame, trades: 
 
 
 def load_sample(data_dir: Path, work_dir: Path, sample: str):
-    M = load_markets(data_dir / "polymarket_markets.jsonl", sample)
+    M = load_markets(markets_path(data_dir), sample)
     models = _models(work_dir, M)
-    trades = load_trades(data_dir / "polymarket_trades.jsonl", set(M.ts))
+    trades = load_trades(data_dir, set(M.ts))
     return M, models, trades, history_panel(M, models), trades_panel(M, trades, models)
 
 

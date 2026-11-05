@@ -11,10 +11,15 @@ seconds after it (Data API).
 from __future__ import annotations
 
 import concurrent.futures as cf
+import gzip
 import json
+import shutil
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from btcbin.data.http import get_json
 
@@ -79,3 +84,27 @@ def download(out_dir: Path, start: str = "2025-10-09", end: str = "2026-11-01", 
     with trades_path.open("a") as f, cf.ThreadPoolExecutor(max(threads - 2, 1)) as pool:
         for rec in pool.map(lambda tc: taker_trades(*tc), todo):
             f.write(json.dumps(rec) + "\n")
+    compact(out_dir)
+
+
+HOLDOUT_START = 1775001600            # 2026-04-01 00:00 UTC
+
+
+def compact(out_dir: Path) -> None:
+    """Gzip the market records and store the trades as parquet, one file per sample (discovery, holdout)."""
+
+    with (out_dir / "polymarket_markets.jsonl").open("rb") as src, gzip.open(out_dir / "polymarket_markets.jsonl.gz", "wb") as dst:
+        shutil.copyfileobj(src, dst)
+    frames = []
+    with (out_dir / "polymarket_trades.jsonl").open() as f:
+        for r in map(json.loads, f):
+            if r.get("error") or not r.get("trades"):
+                continue
+            T = np.array(r["trades"], dtype=float).reshape(-1, 5)
+            frames.append(pd.DataFrame({"window_ts": r["ts"], "time": T[:, 0].astype("int64"), "outcome": T[:, 1].astype("int8"),
+                                        "side": T[:, 2].astype("int8"), "price": T[:, 3], "size": T[:, 4]}))
+    trades = pd.concat(frames, ignore_index=True)
+    for name, sel in (("discovery", trades["window_ts"] < HOLDOUT_START), ("holdout", trades["window_ts"] >= HOLDOUT_START)):
+        pq.write_table(pa.Table.from_pandas(trades[sel].reset_index(drop=True), preserve_index=False),
+                       out_dir / f"polymarket_trades_{name}.parquet", compression="zstd", compression_level=19,
+                       use_byte_stream_split=["price", "size"])
