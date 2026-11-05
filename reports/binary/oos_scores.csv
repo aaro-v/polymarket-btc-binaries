@@ -1,0 +1,8 @@
+model,log_loss,brier,log_loss_gain_vs_ewma_pct
+coin flip,0.69315,0.25,-46.45777
+constant_30d (Gaussian),0.49042,0.16245,-3.62378
+ewma (Gaussian),0.47327,0.15739,0.0
+har (Gaussian),0.46463,0.1552,1.82673
+har_seasonal_iv (Gaussian),0.46354,0.1549,2.05765
+har_seasonal_iv (empirical tails),0.46124,0.15431,2.5432
+"har_seasonal_iv (empirical, recalibrated)",0.46106,0.15426,2.58004

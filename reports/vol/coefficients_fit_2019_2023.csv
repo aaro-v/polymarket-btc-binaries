@@ -1,0 +1,5 @@
+,value
+ewma_half_life_minutes,240
+har,"{'const': -0.0283, 'rv15': 0.4592, 'rv60': 0.321, 'rv1d': 0.1474, 'rv1w': 0.0861}"
+har_seasonal,"{'const': -0.0595, 'rv15': 0.5168, 'rv60': 0.2202, 'rv1d': 0.1188, 'rv1w': 0.1569}"
+har_seasonal_iv,"{'const': 0.9354, 'rv15': 0.4789, 'rv60': 0.1918, 'rv1d': 0.1133, 'rv1w': 0.153, 'iv': 0.1709}"

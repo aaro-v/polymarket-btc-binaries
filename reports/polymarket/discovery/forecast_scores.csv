@@ -1,0 +1,5 @@
+forecast,log_loss,brier
+"market, last print before t",0.5465,0.18866
+"market, first print after t",0.51841,0.17803
+"model, driftless",0.52347,0.17985
+"model, reversal",0.52241,0.17935
