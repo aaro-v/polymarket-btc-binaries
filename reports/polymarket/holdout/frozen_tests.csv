@@ -1,0 +1,6 @@
+test,statistic,estimate,t,n,discovery,p_one_sided,p_holm,reject_at_5pct
+"H1 (primary) model adds information to the market price, m -4..0",logit coefficient on logit(p_rev),0.2919,3.14,102125,0.520 (t 4.41),0.00084,0.00338,True
+"H1b model adds information to the market price, m 1..14",logit coefficient on logit(p_rev),0.1783,5.44,285831,0.186 (t 4.40),0.0,0.0,True
+H2 taker rule picks winners at traded prices (gross of fees),gross P&L per share,0.01708,2.32084,4344,+0.0211 (t 3.72); +0.0240 (t 2.84) with the current fee rule,0.01015,0.0203,True
+H3 taker rule is profitable after the actual fee,net P&L per share,-0.00026,-0.03572,4344,+0.0181 (t 3.20); +0.0065 (t 0.76) with the current fee rule,0.51425,0.51425,False
+H4 quoting around the model beats quoting around the market,difference in maker P&L per fill (daily paired),0.01275,3.10974,214,+0.0091 (t 1.71),0.00094,0.00338,True

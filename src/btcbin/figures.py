@@ -58,7 +58,7 @@ def calibration(reports: Path, out: Path) -> None:
     t = pd.read_csv(reports / "binary" / "calibration.csv")
     fig, ax = _figure(5.2, 4.6)
     ax.plot([0, 1], [0, 1], color=GRID, linewidth=1)
-    for i, (col, label) in enumerate([("g_ewma", "EWMA, Gaussian"), ("recal", "HAR + seasonality + DVOL, empirical tails")]):
+    for i, (col, label) in enumerate([("g_ewma", "EWMA, Gaussian"), ("recal", "HAR + seasonality + DVOL, empirical tails, recalibrated")]):
         g = t[t.model == col]
         ax.plot(g.predicted, g.realised, color=SERIES[i], linewidth=2, marker="o", markersize=4, label=label)
     _style(ax, "Calibration, 2024-2026 window-minutes", "predicted probability of an up window", "realised frequency")
@@ -87,9 +87,36 @@ def market_vs_model(reports: Path, out: Path, sample: str = "discovery") -> None
     fig, ax = _figure()
     ax.bar(t.index, gap, 0.7, color=SERIES[0])
     ax.axvline(0.5, color=MUTED, linewidth=0.8, linestyle=":")
+    ax.set_xticks(range(-4, 15, 2))
     _style(ax, f"Log-loss of the reversal model minus Polymarket's price ({sample})",
            "minute relative to the window start", "difference x 1000 (positive: market better)")
     _save(fig, out / f"polymarket_model_minus_market_{sample}.png")
+
+
+def taker_decomposition(reports: Path, out: Path) -> None:
+    hold = reports / "polymarket" / "holdout" / "taker.csv"
+    if not hold.exists():
+        return
+    disc = pd.read_csv(reports / "polymarket" / "discovery" / "taker_trades.csv")
+    pick = lambda regime: disc[(disc.fee_regime == regime) & (disc.model == "p_rev") & (disc.theta == 0.02)].iloc[0]
+    h = pd.read_csv(hold).iloc[0]
+    groups = [("Discovery,\nfees as charged", pick("all, actual fees")),
+              ("Discovery,\ncurrent fee rule", pick("all, current fee rule applied")),
+              ("Holdout,\ncurrent fee", h)]
+    fig, ax = _figure()
+    x, w = np.arange(len(groups)), 0.26
+    for i, (col, label) in enumerate([("gross_c", "gross"), ("fee_c", "fee"), ("net_c", "net")]):
+        vals = [g[col] for _, g in groups]
+        bars = ax.bar(x + (i - 1) * w, vals, w - 0.02, color=SERIES[i], label=label)
+        for b, v in zip(bars, vals, strict=True):
+            ax.annotate(f"{v:+.2f}" if col != "fee_c" else f"{v:.2f}", (b.get_x() + b.get_width() / 2, max(v, 0)),
+                        xytext=(0, 3), textcoords="offset points", ha="center", fontsize=7, color=MUTED)
+    ax.axhline(0, color=MUTED, linewidth=0.8)
+    ax.set_xticks(x, [g for g, _ in groups])
+    _style(ax, "Pre-window taker rule: cents per share", "", "cents per share")
+    ax.set_ylim(min(-0.5, ax.get_ylim()[0]), 3.2)
+    ax.legend(frameon=False, fontsize=8, labelcolor=INK, ncol=3, loc="upper right")
+    _save(fig, out / "taker_gross_fee_net.png")
 
 
 def render(reports: Path) -> None:
@@ -100,3 +127,4 @@ def render(reports: Path) -> None:
     reversal(reports, out)
     for sample in ("discovery", "holdout"):
         market_vs_model(reports, out, sample)
+    taker_decomposition(reports, out)
