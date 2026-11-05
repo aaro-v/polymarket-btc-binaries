@@ -269,6 +269,10 @@ table, the timing of price prints, quotes and fills, that passive bids fill
 only when traded through, the alignment of the variance target, that features
 do not change when future data are altered, and the Gaussian pricing formula.
 
+Run `btcbin sample-data --out data/synthetic` to generate a small, deterministic
+sample for exercising the code. Reproducing the reported results requires the
+real data.
+
 ## Limitations
 
 The ask is inferred from taker trades, not from the order book, and the

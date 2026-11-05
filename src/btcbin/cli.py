@@ -1,4 +1,4 @@
-"""Command line: ``btcbin build-data`` and ``btcbin run``."""
+"""Command line for preparing data and running the study."""
 
 from __future__ import annotations
 
@@ -14,6 +14,9 @@ def main() -> None:
     b = sub.add_parser("build-data", help="Download Binance, Deribit and Polymarket data.")
     b.add_argument("--out", type=Path, default=Path("data/real"))
     b.add_argument("--parts", nargs="+", default=["binance", "deribit", "polymarket"], choices=["binance", "deribit", "polymarket"])
+    s = sub.add_parser("sample-data", help="Write synthetic inputs for testing the study.")
+    s.add_argument("--out", type=Path, default=Path("data/synthetic"))
+    s.add_argument("--seed", type=int, default=42)
     r = sub.add_parser("run", help="Run a part of the study and write report tables.")
     r.add_argument("part", choices=["vol", "binary", "polymarket", "all"])
     r.add_argument("--sample", choices=["discovery", "holdout", "posthoc"], default="discovery",
@@ -26,6 +29,14 @@ def main() -> None:
         from btcbin.data.build import build
 
         build(args.out, tuple(args.parts))
+        return
+    if args.command == "sample-data":
+        from btcbin.data.synthetic import write_sample
+
+        if args.seed < 0:
+            parser.error("--seed must be non-negative")
+        write_sample(args.out, args.seed)
+        print(f"synthetic data written to {args.out}")
         return
     work = args.data / "work"
     if args.part in ("vol", "all"):
